@@ -9,10 +9,10 @@ from StellarLog.StellarLog import CLog
 
 class CUrlList:
     
-    def __init__(self,name,index,logInfo:dict):
-        self.name = name
+    def __init__(self,index,logInfo:dict,preInfo:list):
         self.index  = index
-        self.info:dict = logInfo
+        self.logInfo:dict = logInfo
+        self.preInfo:list = preInfo
         self._list:list = None
         
     def append(self,List:list):
@@ -32,18 +32,20 @@ class CCrawlerManager:
     def newProcess(self,crawlerName,oUrlList:CUrlList):
         outFilePath = 'file:///' + self.outputFolder + self.name + '.json'
 #        print(outFilePath,urlsFilePath)
-        process = subprocess.Popen(['scrapy','crawl',crawlerName,'-o',outFilePath,'-a','urlFile='+oUrlList],
+        process = subprocess.Popen(['scrapy','crawl',crawlerName,'-o',outFilePath,'-a','urlFile=',oUrlList],
                                    shell=True, 
                                    cwd=self.workDirectory)
         return process
     
-    def engineStart(self):
-        for oJob in self.jobsList:
-            print(oJob.name)
-            self.oLog.safeRecordTime(oJob.name+"start")
-            temp = self.newProcess('pageWorker',oJob.name,oJob.fileName)
+    def engineStart(self,jobsList):
+        for oUrlList in jobsList:
+            print(oUrlList.name)
+            self.oLog.safeRecordTime(oUrlList.name+"start")
+            temp = self.newProcess('pageWorker',oUrlList)
             temp.wait()
-            self.oLog.safeRecordTime(oJob.name+"end")
+            self.oLog.safeRecordTime(oUrlList.name+"end")
+            
+    
 
 
 

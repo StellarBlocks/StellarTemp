@@ -4,7 +4,7 @@ Created on Thu Mar  5 13:37:20 2020
 
 @author: zijia
 """
-from CrawlerManager import CCrawlerManager
+from CrawlerManager import CCrawlerManager, CUrlList
 from StorageManager import CStorage,CStorageMongoDB
 from KnowledgeManager import CKnowledge
 from StellarLog.StellarLog import CDirectoryConfig,CLog
@@ -39,6 +39,8 @@ class CJrjHelper:
     def fetchUrlsForDate(self,year,month,day):
         import requests,json
         import numpy as np
+        cnt = 0
+        date = str(year) + '-' + str(month).zfill(2) + '-' + str(day).zfill(2)
         randomSeq_len = len('311941729')
         str_list = [str(i) for i in np.random.randint(10,size=randomSeq_len)]
         
@@ -49,6 +51,21 @@ class CJrjHelper:
 #        print(randomSeq)
         
         strJson = json.loads(r.content[15:-5])
-        return strJson
+        
+        info = strJson['newsinfo']
+        numNews = len(info)
+        
+        jobsList = list()
+        
+        for news in info:
+#            print(news)
+            logInfo = {"makeDate":news[0]['makedate'],"Date":date,"Index":cnt,"Total":numNews}
+            preInfo = news[0]['stockname'].split(',')
+            oUrlList = CUrlList(None,logInfo,preInfo)
+            oUrlList.replace([news[0]['infourl']])
+            jobsList.append(oUrlList)
+            cnt+=1
+            
+        return jobsList
         
         
