@@ -20,6 +20,15 @@ class CUrlList:
         
     def replace(self,List:list):
         self._list = List
+        
+    def exportJson(self,folder):
+        import json
+        jsonDict = {'index':self.index,
+                    'logInfo':self.logInfo,
+                    'preInfo':self.preInfo,
+                    'urlList':self._list}
+        jsonStr = json.dumps(jsonDict)
+        return jsonStr
 
 class CCrawlerManager:
     def __init__(self,name,workDirectory:str, oLog:CLog, oAgent):
@@ -29,10 +38,10 @@ class CCrawlerManager:
         self.outputFolder = workDirectory
         self.name = name + '_crawler'
     
-    def newProcess(self,crawlerName,oUrlList:CUrlList):
+    def newProcess(self,crawlerName,oUrlFile:str):
         outFilePath = 'file:///' + self.outputFolder + self.name + '.json'
 #        print(outFilePath,urlsFilePath)
-        process = subprocess.Popen(['scrapy','crawl',crawlerName,'-o',outFilePath,'-a','urlFile=',oUrlList],
+        process = subprocess.Popen(['scrapy','crawl',crawlerName,'-o',outFilePath,'-a','urlFile=',oUrlFile],
                                    shell=True, 
                                    cwd=self.workDirectory)
         return process
