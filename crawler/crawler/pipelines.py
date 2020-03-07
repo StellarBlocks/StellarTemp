@@ -9,3 +9,22 @@
 class CrawlerPipeline(object):
     def process_item(self, item, spider):
         return item
+
+
+class diskCachePipeline(object):
+
+    collection_name = 'scrapy_items'
+
+    def __init__(self):
+        pass
+
+
+    def open_spider(self, spider):
+        pass
+
+    def close_spider(self, spider):
+        spider.cache.close()
+        spider.cacheAgent.close()
+        
+    def process_item(self, item, spider):
+        return item

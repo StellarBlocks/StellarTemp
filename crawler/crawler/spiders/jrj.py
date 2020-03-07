@@ -20,10 +20,22 @@ class JrjSpider(scrapy.Spider):
         self.cacheAgent = Cache(cacheAgentPath)
 #        jsonStr = self.cache[int(cacheKey)]
         _,jsonStr = self.cache.pull()
-        print(jsonStr)
+        print('cc',jsonStr)
         oUrlList = json.loads(jsonStr)
         
         self.start_urls = oUrlList['urlList']
+        self.logInfo = oUrlList['logInfo']
+        self.preInfoList:list = oUrlList['preInfo']
+        self.preInfoUrlDict = None
+        if(len(self.preInfoList) == len(self.start_urls)):
+            self.preInfoUrlDict = dict()
+            for idx,url in enumerate(self.start_urls):
+                self.preInfoUrlDict[url] = self.preInfoList[idx]
+        
+        logInfo = {'type':'logInfo','content':self.logInfo}
+        logInfoStr = json.dumps(logInfo)
+        self.cacheAgent.push(logInfoStr)
+            
         
     def parse(self, response):
         temp0 = './/div[@class="titmain"]//h1//text()'
@@ -35,11 +47,17 @@ class JrjSpider(scrapy.Spider):
         ans1 = response.xpath(temp).getall()
         item['title'] = ans0
         item['content'] = ans1
-        ansFinal = {'link':item['link'],'title':ans0,'content':ans1}
+        preInfo = None
+        if(self.preInfoUrlDict != None):
+            preInfo = self.preInfoUrlDict[item['link']]
+        elif(len(self.preInfoList) == 1):
+            preInfo = self.preInfoList[0]
+        ansFinal = {'type':'crawlerResult','content':
+            {'link':item['link'],'title':ans0,'content':ans1,'preInfo':preInfo}}
         ansJson = json.dumps(ansFinal)
         self.cacheAgent.push(ansJson)
-        self.cache.close()
-        self.cacheAgent.close()
+#        self.cache.close()
+#        self.cacheAgent.close()
         yield item
         
         

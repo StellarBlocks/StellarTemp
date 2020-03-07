@@ -68,10 +68,9 @@ class CJrjHelper:
     def __init__(self):
         self.urlRoot = r'http://stock.jrj.com.cn/share/news/company/'
     
-    def fetchUrlsForDate(self,year,month,day):
+    def fetchUrlsForDate(self,year,month,day,jobList = None):
         import requests,json
         import numpy as np
-        cnt = 0
         date = str(year) + '-' + str(month).zfill(2) + '-' + str(day).zfill(2)
         randomSeq_len = len('311941729')
         str_list = [str(i) for i in np.random.randint(10,size=randomSeq_len)]
@@ -87,18 +86,18 @@ class CJrjHelper:
         info = strJson['newsinfo']
         numNews = len(info)
         
-        jobsList = list()
-        
+        if(jobList == None):
+            jobsList = list()
+            
+        logInfo = {"Date":date,"Total":numNews}
+        oUrlList = CUrlList(None,logInfo)
         for news in info:
 #            print(news)
-            logInfo = {"makeDate":news[0]['makedate'],"Date":date,"Index":cnt,"Total":numNews}
+            url = news[0]['infourl']
             preInfo = news[0]['stockname'].split(',')
-            oUrlList = CUrlList(None,logInfo,preInfo)
-            oUrlList.replace([news[0]['infourl']])
-            jobsList.append(oUrlList)
-            cnt+=1
-        
-        
+            oUrlList.append(url,preInfo)
+
+        jobsList.append(oUrlList)
                     
         return jobsList
         
