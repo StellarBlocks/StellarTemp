@@ -5,6 +5,9 @@ Created on Thu Mar  5 14:13:54 2020
 @author: jidou
 """
 import pymongo
+from diskcache import Cache
+
+
 
 class CStorage:
     
@@ -21,7 +24,7 @@ class CStorageMongoDB(CStorage):
         self.db = self.client[self.name + '_db']
         
         
-        
+
         
         
         

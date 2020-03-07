@@ -6,6 +6,7 @@ Created on Tue Mar  3 18:20:57 2020
 """
 import subprocess
 from StellarLog.StellarLog import CLog
+from diskcache import Cache
 
 class CUrlList:
     
@@ -21,7 +22,7 @@ class CUrlList:
     def replace(self,List:list):
         self._list = List
         
-    def exportJson(self,folder):
+    def exportJson(self):
         import json
         jsonDict = {'index':self.index,
                     'logInfo':self.logInfo,
@@ -31,29 +32,55 @@ class CUrlList:
         return jsonStr
 
 class CCrawlerManager:
-    def __init__(self,name,workDirectory:str, oLog:CLog, oAgent):
+    def __init__(self,name,workDirectory:str, oLog:CLog,cachePath:str, cacheAgentPath:str):
         self.workDirectory = workDirectory
         self.jobsList = None
         self.oLog = oLog
         self.outputFolder = workDirectory
         self.name = name + '_crawler'
+        self.jobCnt = 0
+        self._cachePathCrawler = cachePath
+        self._cachePathAgent = cacheAgentPath
+        self.cache = Cache(cachePath)
     
-    def newProcess(self,crawlerName,oUrlFile:str):
+    def _newProcess(self,crawlerName,oUrlCacheKey:str):
         outFilePath = 'file:///' + self.outputFolder + self.name + '.json'
 #        print(outFilePath,urlsFilePath)
-        process = subprocess.Popen(['scrapy','crawl',crawlerName,'-o',outFilePath,'-a','urlFile=',oUrlFile],
+        process = subprocess.Popen(['scrapy','crawl',crawlerName,'-o',outFilePath,'-a',
+                                    'cacheCrawlerPath='+ self._cachePathCrawler,'-a',
+                                    'cacheKey='+oUrlCacheKey,'-a',
+                                    'cacheAgentPath=' + self._cachePathAgent],
                                    shell=True, 
                                    cwd=self.workDirectory)
         return process
     
-    def engineStart(self,jobsList):
+    def engineStart(self,jobsList:list):
         for oUrlList in jobsList:
-            print(oUrlList.name)
-            self.oLog.safeRecordTime(oUrlList.name+"start")
-            temp = self.newProcess('pageWorker',oUrlList)
+            print(oUrlList.preInfo)
+            oUrlList.index = self.jobCnt
+            tempKey = self._prepareJob(oUrlList.exportJson())
+            self.oLog.safeRecordTime(str(oUrlList.index)+"start")
+            temp = self._newProcess('jrj',tempKey)
             temp.wait()
-            self.oLog.safeRecordTime(oUrlList.name+"end")
+            self.oLog.safeRecordTime(str(oUrlList.index)+"end")
+    
+    def _prepareJob(self,content:str):
+#        key = str(self.jobCnt)
+#        if(self.cache.get(key)==False):
+#            raise ValueError("this key exists in the cache")
+#            return None
+#        else:
+#            self.cache[key] = content
+#            self.jobCnt+=1
+#            return key
+        self.jobCnt+=1
+        key = self.cache.push(content)
+        return str(key)
+    
+    def closeCache(self):
+        self.cache.close()
             
+        
     
 
 

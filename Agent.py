@@ -8,6 +8,8 @@ from CrawlerManager import CCrawlerManager, CUrlList
 from StorageManager import CStorage,CStorageMongoDB
 from KnowledgeManager import CKnowledge
 from StellarLog.StellarLog import CDirectoryConfig,CLog
+from diskcache import Cache
+import json
 
 class CAgent:
     
@@ -18,18 +20,48 @@ class CAgent:
         self.knowledgeManager:CKnowledge = None
         self.oDir:CDirectoryConfig = oDir
         self.oLog = CLog(oDir['outputRoot'],self.name + '_log')
+        self.dbWeb = ''
+        self.cacheAgent = Cache(oDir['cacheAgentFolder'])
+        self.cacheCrawler = Cache(oDir['cacheCrawlerFolder'])
         
-    def configStorage(self, path ,mode = 'mongoDB'):
+        
+    def _configStorage(self, mode = 'mongoDB'):
+        path = self.dbWeb
         if(mode == 'mongoDB'):
             self.storageManager = CStorageMongoDB(self.name,path)
     
-    def configCrawler(self):
-        self.crawlerManager = CCrawlerManager(self.name,self.oDir['crawlerCWD'],self.oLog)
+    def _configCrawler(self):
+        self.crawlerManager = CCrawlerManager(self.name,self.oDir['crawlerCWD'],
+                                              self.oLog,self.oDir['cacheCrawlerFolder'],
+                                              self.oDir['cacheAgentFolder'])
         
-    def configKnowledge(self):
+    def _configKnowledge(self):
         self.knowledgeManager = CKnowledge(self.name, self.storageManager)
-        
     
+    def configAll(self):
+        self._configCrawler()
+        self._configKnowledge()
+        self._configStorage()
+    
+    def startCrawling(self,jobsList:list):
+        self.crawlerManager.engineStart(jobsList)
+    
+    def fetchResult(self):
+        result = ''
+        while(result!=None):
+            _,result = self.cacheAgent.pull()
+            if(result != None):
+                result = json.loads(result)
+                print(result)
+    
+    def clearCache(self):
+        self.cacheAgent.clear()
+        self.cacheCrawler.clear()
+        
+    def closeCache(self):
+        self.cacheAgent.close()
+        self.cacheCrawler.close()
+        self.crawlerManager.closeCache()
         
 class CJrjHelper:
     
@@ -65,7 +97,9 @@ class CJrjHelper:
             oUrlList.replace([news[0]['infourl']])
             jobsList.append(oUrlList)
             cnt+=1
-            
+        
+        
+                    
         return jobsList
         
         
