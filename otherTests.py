@@ -32,3 +32,24 @@ oAgent.startCrawling(jobsList)
 oAgent.fetchResult()
 oAgent.clearCache()
 oAgent.closeCache()
+
+#
+#import subprocess
+##r'C:\Users\zijia\.conda\envs\StellarCrawler\python.exe'
+#temp = subprocess.Popen([r'C:\Users\zijia\.conda\envs\StellarCrawler\python.exe','otherTests.py'])
+
+import subprocess
+
+temp = subprocess.Popen([r'C:\Users\zijia\.conda\envs\StellarCrawler\python.exe','KnowledgeManager.py',
+                         "--name","test","--dbPath","mongodb://localhost:27017/"])
+
+from multiprocessing.connection import Client
+
+address = ('localhost', 6082)
+conn = Client(address, authkey=b'secret password')
+conn.send('close')
+msg = conn.recv()
+print(msg)
+# can also send arbitrary objects:
+# conn.send(['a', 2.5, None, int, sum])
+conn.close()
