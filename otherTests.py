@@ -45,7 +45,7 @@ temp = subprocess.Popen([r'C:\Users\zijia\.conda\envs\StellarCrawler\python.exe'
 
 from multiprocessing.connection import Client
 
-address = ('localhost', 6082)
+address = ('localhost', 6083)
 conn = Client(address, authkey=b'secret password')
 conn.send('close')
 msg = conn.recv()
