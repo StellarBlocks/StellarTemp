@@ -36,7 +36,8 @@ class CAgent:
                                               self.oDir['cacheAgentFolder'])
         
     def _configKnowledge(self):
-        self.knowledgeManager = CKnowledge(self.name, self.storageManager)
+#        self.knowledgeManager = CKnowledge(self.name, self.storageManager.path)
+        pass
     
     def configAll(self):
         self._configCrawler()

@@ -20,6 +20,7 @@ class CStorageMongoDB(CStorage):
     
     def __init__(self,name,path):
         super().__init__(name,path)
+        print(path)
         self.client = pymongo.MongoClient(self.path)
         self.db = self.client[self.name + '_db']
         

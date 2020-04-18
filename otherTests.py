@@ -40,12 +40,12 @@ oAgent.closeCache()
 
 import subprocess
 
-temp = subprocess.Popen([r'C:\Users\zijia\.conda\envs\StellarCrawler\python.exe','KnowledgeManager.py',
+temp = subprocess.Popen([r'C:\Users\Jin Dou\AppData\Local\conda\conda\envs\Spider\python.exe','KnowledgeManager.py',
                          "--name","test","--dbPath","mongodb://localhost:27017/"])
 
 from multiprocessing.connection import Client
 
-address = ('localhost', 6083)
+address = ('localhost', 6084)
 conn = Client(address, authkey=b'secret password')
 conn.send('close')
 msg = conn.recv()

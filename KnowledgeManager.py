@@ -68,23 +68,28 @@ def onCallRecvDaemon(oServer:CServer,oInstrCache:mp.Queue,oRecvCache:mp.Queue):
     while True:
         instr = ''
         recvMsg = ''
+        otherEndCloseFlag = True
         
-        if(oServer.poll(3)):
+        if(oServer.poll(3) != False):# poll will return true when the other end of the pipe is closed
+#            print("onCallRecv: Waiting for msg",oServer.poll())
             try:
                 recvMsg = oServer.recv()
             except:
+                otherEndCloseFlag = True
                 recvMsg = ''
             else:
                 print(recvMsg)
                 oRecvCache.put(recvMsg)
+                otherEndCloseFlag = False
         
-        if(oServer.poll() == False):
+        if(oServer.poll() == False or otherEndCloseFlag):
             try:
                 instr = oInstrCache.get(block = False)
             except:
                 instr = ''
             else:
                 if (instr == 'close'):
+                    print('onCallRecv: recv inst: ' + instr)
                     oInstrCache.put('onCallRecv_Close')
                     break
                 else:
@@ -112,6 +117,7 @@ def onCallSendDaemon(oServer:CServer,oInstrCache:mp.Queue,oSendCache:mp.Queue):
                 instr = ''
             else:
                 if (instr == 'close'):
+                    print('onCallSend: recv inst: ' + instr)
                     oInstrCache.put('onCallSend_Close')
                     break
                 else:
@@ -124,10 +130,9 @@ class CKnowledge:
     def __init__(self,name, dbPath:str):
         self.name = name + '_knowledge'
         self._storageManager:CStorage = CStorageMongoDB(name,dbPath)
-        self.address = ('localhost', 6083)
+        self.address = ('localhost', 6084)
         self.oCrsProcManager = CCrsProcManager()
-        self.oCrsProcManager.start()
-        self.oServer = self.oCrsProcManager.server(self.address)
+        self.oServer = None
         self.oRecvCache = mp.Queue()
         self.oSendCache = mp.Queue()
         self.oInstrRecvCache = mp.Queue()
@@ -136,6 +141,8 @@ class CKnowledge:
         self.prcSend = None
             
     def startServer(self):
+        self.oCrsProcManager.start()
+        self.oServer = self.oCrsProcManager.server(self.address)
         self.oServer.start()
         print('server start')
         self.prcRecv = mp.Process(target = onCallRecvDaemon, 
@@ -159,15 +166,33 @@ class CKnowledge:
                     self.oInstrSendCache.put('close')
                     self.prcRecv.join()
                     self.prcSend.join()
-                    self.prcRecv.close()
-                    self.prcSend.close()
+                    try:
+                        self.prcRecv.close()
+                    except:
+                        self.prcRecv.terminate()
+                    try:
+                        self.prcSend.close()
+                    except:
+                        self.prcSend.terminate()
                     print(self.oInstrRecvCache.get())
                     print(self.oInstrSendCache.get())
                     self.oServer.close()
-                    break
+                    self.oCrsProcManager.shutdown()
+                    return 'CKnowledgeServer_close'
                 
         return 0
-        
+    
+    def _close(self):
+        try:
+            self.prcRecv.close()
+        except:
+            self.prcRecv.terminate()
+        try:
+            self.prcSend.close()
+        except:
+            self.prcSend.terminate()
+        self.oServer.close()
+        self.oCrsProcManager.shutdown()
 #    def startServer(self):
 #        self.oServer.start()
 #        while True:
@@ -195,7 +220,11 @@ if __name__ == "__main__":
     print(args)
     
     oKnowledge = CKnowledge(args.name,args.dbPath)
-    oKnowledge.startServer()
+    try:
+        err = oKnowledge.startServer()
+    except:
+        oKnowledge._close()
+    print(err)
 #    oServer = CServer(('localhost', 6083))
 #    oServer.start()
     
