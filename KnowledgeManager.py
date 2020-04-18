@@ -10,6 +10,7 @@ from multiprocessing.connection import Listener
 from multiprocessing.managers import BaseManager  
 import multiprocessing as mp
 import argparse
+from StellarLog.StellarLog import CLog,CDirectoryConfig,datetime
 
 def parse_args():
   """
@@ -22,6 +23,9 @@ def parse_args():
   parser.add_argument('--dbPath', dest='dbPath',
                     help='database path',
                     default='mongodb://localhost:27017/', type=str)
+  parser.add_argument('--logFlag', dest='logFlag',
+                    help='if include logging',
+                    default=True, type=bool)
 
   args = parser.parse_args()
   return args
@@ -52,6 +56,8 @@ class CCrsProcManager(BaseManager):
     pass
 
 CCrsProcManager.register('server', CServer)
+CCrsProcManager.register('oLog', CLog)
+
 
 ## Multiprocessing Functions
 
@@ -64,7 +70,7 @@ def sendRes(oServer:CServer,msg): # old version
     oServer.send(msg+'multiprocess')
     return 0
 
-def onCallRecvDaemon(oServer:CServer,oInstrCache:mp.Queue,oRecvCache:mp.Queue):
+def onCallRecvDaemon(oServer:CServer,oInstrCache:mp.Queue,oRecvCache:mp.Queue,oLog:CLog=None):
     while True:
         instr = ''
         recvMsg = ''
@@ -75,14 +81,17 @@ def onCallRecvDaemon(oServer:CServer,oInstrCache:mp.Queue,oRecvCache:mp.Queue):
             try:
                 recvMsg = oServer.recv()
             except:
-                otherEndCloseFlag = True
+                otherEndCloseFlag = True #!!!important
                 recvMsg = ''
             else:
                 print(recvMsg)
-                oRecvCache.put(recvMsg)
+                if(oLog != None):
+                    oLog.safeRecordTime('onCallRecv_recv_msg: '+recvMsg)
+                err = oRecvCache.put(recvMsg)
+#                print(err)
                 otherEndCloseFlag = False
         
-        if(oServer.poll() == False or otherEndCloseFlag):
+        if(oServer.poll(0) == False or otherEndCloseFlag):
             try:
                 instr = oInstrCache.get(block = False)
             except:
@@ -90,14 +99,17 @@ def onCallRecvDaemon(oServer:CServer,oInstrCache:mp.Queue,oRecvCache:mp.Queue):
             else:
                 if (instr == 'close'):
                     print('onCallRecv: recv inst: ' + instr)
+                    if(oLog != None):
+                        oLog.safeRecordTime('onCallRecv_recv_inst: ' + instr)
                     oInstrCache.put('onCallRecv_Close')
-                    break
+                    print('return')
+                    return
                 else:
                     pass
         
     return 0
 
-def onCallSendDaemon(oServer:CServer,oInstrCache:mp.Queue,oSendCache:mp.Queue):
+def onCallSendDaemon(oServer:CServer,oInstrCache:mp.Queue,oSendCache:mp.Queue,oLog:CLog=None):
     while True:
         instr = ''
         sendMsg = ''
@@ -118,8 +130,10 @@ def onCallSendDaemon(oServer:CServer,oInstrCache:mp.Queue,oSendCache:mp.Queue):
             else:
                 if (instr == 'close'):
                     print('onCallSend: recv inst: ' + instr)
+                    if(oLog != None):
+                        oLog.safeRecordTime('onCallSend_recv_inst: ' + instr)
                     oInstrCache.put('onCallSend_Close')
-                    break
+                    return
                 else:
                     pass
         
@@ -127,10 +141,10 @@ def onCallSendDaemon(oServer:CServer,oInstrCache:mp.Queue,oSendCache:mp.Queue):
 
 class CKnowledge:
     
-    def __init__(self,name, dbPath:str):
+    def __init__(self,name, dbPath:str,logFlag = False):
         self.name = name + '_knowledge'
         self._storageManager:CStorage = CStorageMongoDB(name,dbPath)
-        self.address = ('localhost', 6084)
+        self.address = ('localhost', 6085)
         self.oCrsProcManager = CCrsProcManager()
         self.oServer = None
         self.oRecvCache = mp.Queue()
@@ -139,20 +153,33 @@ class CKnowledge:
         self.oInstrSendCache = mp.Queue()
         self.prcRecv = None
         self.prcSend = None
+        self.logFlag = logFlag
+        self.oLog = None
+        print(self.logFlag)
+      
+    def configLogger(self):
+        dir_list = ['Log']
+        oDir = CDirectoryConfig(dir_list,'filesDirectory.conf')
+        oDir.checkFolders()
+        self.oLog = self.oCrsProcManager.oLog(oDir['Log'],'CKnowledge'+str(datetime.datetime.now().date()))
             
     def startServer(self):
         self.oCrsProcManager.start()
+        if(self.logFlag == True):
+            self.configLogger()
         self.oServer = self.oCrsProcManager.server(self.address)
         self.oServer.start()
         print('server start')
+        if self.logFlag: 
+            self.oLog.safeRecordTime('server_start')
         self.prcRecv = mp.Process(target = onCallRecvDaemon, 
-                                  args=[self.oServer, self.oInstrRecvCache,self.oRecvCache])
+                                  args=[self.oServer, self.oInstrRecvCache,self.oRecvCache,self.oLog])
         
         self.prcSend = mp.Process(target = onCallSendDaemon,
-                                  args=[self.oServer, self.oInstrSendCache,self.oSendCache])
+                                  args=[self.oServer, self.oInstrSendCache,self.oSendCache,self.oLog])
         self.prcRecv.start()
         self.prcSend.start()
-        
+        lastMsg = list()
         while True:
             recvMsg = ''
             try:
@@ -164,8 +191,18 @@ class CKnowledge:
                     self.oSendCache.put('close'+'newMultiprocess')
                     self.oInstrRecvCache.put('close')
                     self.oInstrSendCache.put('close')
-                    self.prcRecv.join()
-                    self.prcSend.join()
+                    err1 = self.prcSend.join()
+                    print('prcSend',err1)
+                    
+                    while (True): #self.oRecvCache.empty() is not reliable, because it can be empty before new item comes
+                        try: 
+                            recvMsg = self.oRecvCache.get(timeout = 3)
+                            lastMsg.append(recvMsg)
+                        except:
+                            break
+                        
+                    err2 = self.prcRecv.join() #it seems that if join() wait for too long, it will block forever
+                    print('prcRecv',err2)
                     try:
                         self.prcRecv.close()
                     except:
@@ -174,25 +211,49 @@ class CKnowledge:
                         self.prcSend.close()
                     except:
                         self.prcSend.terminate()
-                    print(self.oInstrRecvCache.get())
-                    print(self.oInstrSendCache.get())
+                    
+                    if self.logFlag: 
+                        self.oLog.safeRecord('last Msg: ',False)
+                        for msg in lastMsg:
+                            self.oLog.safeRecord(msg, False)
+                        self.oLog.safeRecord('')
+                    
+                    ans = self.oInstrRecvCache.get()
+                    print(ans)
+                    if self.logFlag: 
+                        self.oLog.safeRecordTime(ans)
+                        
+                    ans = self.oInstrSendCache.get()
+                    print(ans)
+                    if self.logFlag: 
+                        self.oLog.safeRecordTime(ans)
+                        
                     self.oServer.close()
+                    if self.logFlag: 
+                        self.oLog.safeRecordTime('server_close')
+                        self.oLog.safeRecord('----------------------------------------')
                     self.oCrsProcManager.shutdown()
-                    return 'CKnowledgeServer_close'
-                
+#                    print("CKnowledgeServer_close")
+                    return "CKnowledgeServer_close"
         return 0
     
     def _close(self):
         try:
-            self.prcRecv.close()
+            try:
+                self.prcRecv.close()
+            except:
+                self.prcRecv.terminate()
+            try:
+                self.prcSend.close()
+            except:
+                self.prcSend.terminate()
         except:
-            self.prcRecv.terminate()
-        try:
-            self.prcSend.close()
-        except:
-            self.prcSend.terminate()
+            pass
         self.oServer.close()
         self.oCrsProcManager.shutdown()
+        if self.logFlag: 
+            self.oLog.safeRecordTime('server_close')
+            self.oLog.safeRecord('----------------------------------------')
 #    def startServer(self):
 #        self.oServer.start()
 #        while True:
@@ -217,14 +278,14 @@ class CKnowledge:
 if __name__ == "__main__":
     args = parse_args()
     print("call with arguments:")
-    print(args)
-    
-    oKnowledge = CKnowledge(args.name,args.dbPath)
+    oKnowledge = CKnowledge(args.name,args.dbPath,args.logFlag)
     try:
         err = oKnowledge.startServer()
     except:
         oKnowledge._close()
-    print(err)
+    else:
+        print(err)
+        pass
 #    oServer = CServer(('localhost', 6083))
 #    oServer.start()
     
