@@ -72,7 +72,7 @@ class CCrawlerManager:
             oUrlList.index = self.jobCnt
             tempKey = self._prepareJob(oUrlList.exportJson())
             self.oLog.safeRecordTime(str(oUrlList.index)+"start")
-            temp = self._newProcess('jrj',tempKey)
+            temp = self._newProcess('general',tempKey)
             temp.wait()
             self.oLog.safeRecordTime(str(oUrlList.index)+"end")
     
@@ -92,7 +92,25 @@ class CCrawlerManager:
     
     def closeCache(self):
         self.cache.close()
-            
+
+class CContentExtract():
+    
+    def __init__(self,mode='boilerpipe'):
+        if(mode=='boilerpipe'):
+            self.Module = self._importBoilerpipe3Extractor()
+        else:
+            raise ValueError("doesn't have this kind of mode")
+    
+    def boilerpipe(self,htmlText):
+        
+        extractor = self.Module(extractor='ArticleExtractor', html=htmlText)
+        title = extractor.getTitle()
+        content = extractor.getText()
+        return title,content
+    
+    def _importBoilerpipe3Extractor(self):
+        from boilerpipe.extract import Extractor
+        return Extractor
         
     
 

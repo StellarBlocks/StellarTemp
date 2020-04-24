@@ -12,4 +12,5 @@ Created on Tue Mar  3 13:26:35 2020
 
 from boilerpipe.extract import Extractor
 extractor = Extractor(extractor='ArticleExtractor', html=downloaded)
-extracted_text = extractor.getText()
+title = extractor.getTitle()
+content = extractor.getText()
