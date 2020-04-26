@@ -1,0 +1,5 @@
+---
+Storage: { Mode: mongoDB, dbWeb: mongodb://localhost:27017/}
+KnowledgeManager: { address: localhost, port: 6085, password: secret password}
+
+...

@@ -11,7 +11,34 @@ from multiprocessing.managers import BaseManager
 import multiprocessing as mp
 import argparse
 from StellarLog.StellarLog import CLog,CDirectoryConfig,datetime
+import yaml 
 
+class CConfigByYaml:
+    
+    def __init__(self,filePath):
+        self.content = self._readYaml(filePath)
+        
+    def _readYaml(self,filePath):
+        ans = None
+        with open(filePath,'r') as stream:
+            try:
+                ans = yaml.safe_load(stream)
+            except yaml.YAMLError as exc:
+                print(exc)
+        return ans
+    
+    def __getitem__(self,attr):
+        return self.content[attr]
+    
+    def getConfigValues(self,attrs=None):
+        if(attrs == None):
+            return self.content
+        else:
+            ans = dict()
+            for attr in attrs:
+                ans[attr] = self.content[attr]
+            return ans
+        
 def parse_args():
   """
   Parse input arguments
@@ -144,7 +171,8 @@ class CKnowledge:
     def __init__(self,name, dbPath:str,logFlag = False):
         self.name = name + '_knowledge'
         self._storageManager:CStorage = CStorageMongoDB(name,dbPath)
-        self.address = ('localhost', 6085)
+        oConfig = CConfigByYaml('./ConfigAttributes.yml')['KnowledgeManager']
+        self.address = (oConfig['address'], oConfig['port'])
         self.oCrsProcManager = CCrsProcManager()
         self.oServer = None
         self.oRecvCache = mp.Queue()
@@ -201,7 +229,7 @@ class CKnowledge:
                         except:
                             break
                         
-                    err2 = self.prcRecv.join() #it seems that if join() wait for too long, it will block forever
+                    err2 = self.prcRecv.join() #it seems that if join() wait for too long, it will block forever; Maybe because the deadlock between existed recv process and the queue cache the recv process keeps
                     print('prcRecv',err2)
                     try:
                         self.prcRecv.close()
@@ -272,9 +300,45 @@ class CKnowledge:
 #            if msg == 'close':
 #                self.oServer.close()
 #                break
+from multiprocessing.connection import Client
+class CKnowledgeClient:
+    
+    def __init__(self,addressTuple,authkey=b'secret password',oLog = None):
+        self.addressTuple = addressTuple
+        self.authkey = authkey
+        self.conn = None
+        self.oLog = oLog
         
+    def connect(self):
+        self.conn = Client(self.address, authkey=self.authkey)
+    
+    def send(self,msg):
+        if(not self.conn.closed):
+            return self.conn.send('msg')
+        else:
+            self.modMsg('connection is closed')
+            return False
         
-
+    def recv(self):
+        if(not self.conn.closed):
+            return self.conn.recv()
+        else:
+            self.modMsg('connection is closed')
+            return False
+    
+    def close(self):
+        if(not self.conn.closed):
+            self.conn.close()
+    
+    def modMsg(self,string:str):
+        string = self.__class__.__name__ + ' warning: ' + string
+        if(self.oLog != None):
+            self.oLog.safeRecordTime(string)
+        else:
+            print(string)
+            
+        
+    
 if __name__ == "__main__":
     args = parse_args()
     print("call with arguments:")
