@@ -16,7 +16,6 @@ oDir = CDirectoryConfig(dir_list,'filesDirectory.conf')
 oDir.checkFolders()
 #
 #
-from diskcache import Cache
 
 #oTemp = Cache(oDir['cacheCrawlerFolder'])
 
@@ -27,7 +26,7 @@ oConf = CConfigByYaml('./ConfigAttributes.yml')
 oJrjUrls = CJrjHelper()
 jobsList = oJrjUrls.fetchUrlsForDate(2020,3,6)
 jobsList = jobsList[0:2]
-oAgent = CAgent('jrj',oDir,oConf)
+oAgent = CAgent('testjrj',oDir,oConf)
 oAgent.configAll()
 oAgent.startCrawling(jobsList)
 oAgent.fetchResult()
