@@ -38,6 +38,16 @@ class CUrlList:
                     'urlList':self._list}
         jsonStr = json.dumps(jsonDict)
         return jsonStr
+    
+    def __getitem__(self,idx):
+        oUrlList = CUrlList(self.index,{'type':'subList'})
+        oUrlList._list = self._list[idx]
+        oUrlList.preInfoList = self.preInfoList[idx]
+        return oUrlList
+    
+    def __len__(self):
+        return len(self._list)
+        
 
 class CCrawlerManager:
     def __init__(self,name,workDirectory:str, oLog:CLog,cachePath:str, cacheAgentPath:str):
@@ -54,13 +64,23 @@ class CCrawlerManager:
     def _newProcess(self,crawlerName,oUrlCacheKey:str):
         outFilePath = 'file:///' + self.outputFolder + self.name + '.json'
 #        print(outFilePath,urlsFilePath)
-        process = subprocess.Popen(['scrapy','crawl',crawlerName,'-o',outFilePath,'-a',
+#        process = subprocess.Popen(['scrapy','crawl',crawlerName,'-o',outFilePath,'-a',
+#                                    'cacheCrawlerPath='+ self._cachePathCrawler,'-a',
+#                                    'cacheKey='+oUrlCacheKey,'-a',
+#                                    'cacheAgentPath=' + self._cachePathAgent],
+#                                   shell=True, 
+#                                   cwd=self.workDirectory)
+#        print('scrapy','crawl',crawlerName,'-o',outFilePath,'-a',
+#                                    'cacheCrawlerPath='+ self._cachePathCrawler,'-a',
+#                                    'cacheKey='+oUrlCacheKey,'-a',
+#                                    'cacheAgentPath=' + self._cachePathAgent)
+        process = subprocess.Popen(['scrapy','crawl',crawlerName,'-a',
                                     'cacheCrawlerPath='+ self._cachePathCrawler,'-a',
                                     'cacheKey='+oUrlCacheKey,'-a',
                                     'cacheAgentPath=' + self._cachePathAgent],
                                    shell=True, 
                                    cwd=self.workDirectory)
-        print('scrapy','crawl',crawlerName,'-o',outFilePath,'-a',
+        print('scrapy','crawl',crawlerName,'-a',
                                     'cacheCrawlerPath='+ self._cachePathCrawler,'-a',
                                     'cacheKey='+oUrlCacheKey,'-a',
                                     'cacheAgentPath=' + self._cachePathAgent)
@@ -73,8 +93,9 @@ class CCrawlerManager:
             tempKey = self._prepareJob(oUrlList.exportJson())
             self.oLog.safeRecordTime(str(oUrlList.index)+"start")
             temp = self._newProcess('general',tempKey)
-            temp.wait()
+#            temp.wait()
             self.oLog.safeRecordTime(str(oUrlList.index)+"end")
+            return temp
     
     def _prepareJob(self,content:str):
 #        key = str(self.jobCnt)

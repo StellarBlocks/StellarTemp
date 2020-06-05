@@ -39,7 +39,7 @@ class GeneralSpider(scrapy.Spider):
                 for idx,url in enumerate(self.start_urls):
                     self.preInfoUrlDict[url] = self.preInfoList[idx]
             
-            logInfo = {'type':'logInfo','content':self.logInfo}
+            logInfo = {'type':'logInfo','content':{'data':self.logInfo}}
             logInfoStr = json.dumps(logInfo)
             self.cacheAgent.push(logInfoStr)
             
@@ -64,7 +64,7 @@ class GeneralSpider(scrapy.Spider):
         elif(len(self.preInfoList) == 1):
             preInfo = self.preInfoList[0]
         ansFinal = {'type':'crawlerResult','content':
-            {'link':item['link'],'title':ans0,'content':ans1,'preInfo':preInfo}}
+            {'data':{'link':item['link'],'title':ans0,'content':ans1},'preInfo':preInfo}}
         ansJson = json.dumps(ansFinal)
         self.cacheAgent.push(ansJson)
 #        self.cache.close()

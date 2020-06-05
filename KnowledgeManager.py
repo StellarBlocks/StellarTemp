@@ -171,7 +171,7 @@ class CKnowledge:
     def __init__(self,name, dbPath:str,logFlag = False):
         self.name = name + '_knowledge'
         self._storageManager:CStorage = CStorageMongoDB(name,dbPath)
-        oConfig = CConfigByYaml('./ConfigAttributes.yml')['KnowledgeManager']
+        oConfig = CConfigByYaml('./conf/ConfigAttributes.yml')['KnowledgeManager']
         self.address = (oConfig['address'], oConfig['port'])
         self.oCrsProcManager = CCrsProcManager()
         self.oServer = None
@@ -187,7 +187,7 @@ class CKnowledge:
       
     def configLogger(self):
         dir_list = ['Log']
-        oDir = CDirectoryConfig(dir_list,'filesDirectory.conf')
+        oDir = CDirectoryConfig(dir_list,'./conf/filesDirectory.conf')
         oDir.checkFolders()
         self.oLog = self.oCrsProcManager.oLog(oDir['Log'],'CKnowledge'+str(datetime.datetime.now().date()))
             
@@ -216,7 +216,7 @@ class CKnowledge:
                 recvMsg = ''
             else:
                 if(recvMsg == 'close'):
-                    self.oSendCache.put('close'+'newMultiprocess')
+                    self.oSendCache.put('All is closed')
                     self.oInstrRecvCache.put('close')
                     self.oInstrSendCache.put('close')
                     err1 = self.prcSend.join()
@@ -310,7 +310,7 @@ class CKnowledgeClient:
         self.oLog = oLog
         
     def connect(self):
-        self.conn = Client(self.address, authkey=self.authkey)
+        self.conn = Client(self.addressTuple, authkey=self.authkey)
     
     def send(self,msg):
         if(not self.conn.closed):
@@ -327,17 +327,28 @@ class CKnowledgeClient:
             return False
     
     def close(self):
-        if(not self.conn.closed):
-            self.conn.close()
-    
+        if(not self.closedFlag):
+            self.conn.send('close')
+            msg = self.conn.recv()
+            if(msg == 'All is closed'):
+                self.conn.close()
+                return True
+            else:
+                return False
+            
     def modMsg(self,string:str):
         string = self.__class__.__name__ + ' warning: ' + string
         if(self.oLog != None):
             self.oLog.safeRecordTime(string)
         else:
             print(string)
-            
-        
+    
+    @property        
+    def closedFlag(self):
+        if(self.conn == None ):
+            return True
+        else:
+            return self.conn.closed
     
 if __name__ == "__main__":
     args = parse_args()

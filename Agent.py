@@ -8,9 +8,11 @@ from CrawlerManager import CCrawlerManager, CUrlList
 from StorageManager import CStorage,CStorageMongoDB
 from KnowledgeManager import CKnowledgeClient
 from StellarLog.StellarLog import CDirectoryConfig,CLog
+import signal
 from diskcache import Cache
 import json
 import yaml
+import time
 
 class CConfigByYaml:
     
@@ -47,7 +49,7 @@ class CAgent:
         self.knowledgeManagerClient:CKnowledgeClient = None
         self.oDir:CDirectoryConfig = oDir
         self.oConf = oConfigByYaml
-        self.oLog = CLog(oDir['outputRoot'],self.name + '_log')
+        self.oLog = CLog(oDir['Log'],self.name + '_log')
         self.dbWeb = ''
         self.cacheAgent = Cache(oDir['cacheAgentFolder'])
         self.cacheCrawler = Cache(oDir['cacheCrawlerFolder'])
@@ -75,19 +77,38 @@ class CAgent:
     
     def configAll(self):
         self._configCrawler()
+        self.oLog.safeRecordTime('CrawlerManager conf finished')
         self._configKnowledgeManager()
+        self.oLog.safeRecordTime('KnowledgeManager conf finished')
         self._configStorage()
+        self.oLog.safeRecordTime('StorageManager conf finished')
     
     def startCrawling(self,jobsList:list):
-        self.crawlerManager.engineStart(jobsList)
+        return self.crawlerManager.engineStart(jobsList)
     
-    def fetchResult(self):
+    def fetchResult(self,handler,subProcHandle,timeWaitStep = 1,maxWaitTimes=5): #total continuous waittime will be (timeWaitStep * maxWaitTimes)
         result = ''
-        while(result!=None):
+        cnt = 0
+        while(True):
             _,result = self.cacheAgent.pull()
             if(result != None):
                 result = json.loads(result)
-                print(result)
+                ans = handler(result['type'],result['content'])
+#                print(ans)
+                for temp in ans:
+                    self.storageManager.storeData(temp[0],temp[1],temp[2])
+#                break
+                cnt = 0 #clear counter
+            elif(timeWaitStep * maxWaitTimes > 0):
+                if(cnt >= maxWaitTimes):# if continuous wait time equals to maxWaitTimes
+                    return False
+                elif subProcHandle.poll() != None: #if the subprocess is finished
+                    return subProcHandle.poll()
+                else:
+                    time.sleep(timeWaitStep)
+                    cnt+=1 #counter add one
+            else:
+                raise ValueError("timeWaitStep * maxWaitTimes should be bigger than 0")
     
     def clearCache(self):
         self.cacheAgent.clear()
@@ -98,12 +119,16 @@ class CAgent:
         self.cacheCrawler.close()
         self.crawlerManager.closeCache()
         
+    def close(self):
+        self.closeCache()
+        
+        
 class CJrjHelper:
     
     def __init__(self):
         self.urlRoot = r'http://stock.jrj.com.cn/share/news/company/'
     
-    def fetchUrlsForDate(self,year,month,day,jobList = None):
+    def fetchUrlsForDate(self,year,month,day):
         import requests,json
         import numpy as np
         date = str(year) + '-' + str(month).zfill(2) + '-' + str(day).zfill(2)
@@ -120,9 +145,6 @@ class CJrjHelper:
         
         info = strJson['newsinfo']
         numNews = len(info)
-        
-        if(jobList == None):
-            jobsList = list()
             
         logInfo = {"Date":date,"Total":numNews}
         oUrlList = CUrlList(None,logInfo)
@@ -131,9 +153,7 @@ class CJrjHelper:
             url = news[0]['infourl']
             preInfo = news[0]['stockname'].split(',')
             oUrlList.append(url,preInfo)
-
-        jobsList.append(oUrlList)
                     
-        return jobsList
+        return oUrlList
         
         
