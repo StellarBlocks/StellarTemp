@@ -40,7 +40,9 @@ class CUrlList:
         return jsonStr
     
     def __getitem__(self,idx):
-        oUrlList = CUrlList(self.index,{'type':'subList'})
+        tempDict = self.logInfo.copy()
+        tempDict['type'] = 'subList'
+        oUrlList = CUrlList(self.index,tempDict)
         oUrlList._list = self._list[idx]
         oUrlList.preInfoList = self.preInfoList[idx]
         return oUrlList

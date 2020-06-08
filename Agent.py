@@ -120,8 +120,7 @@ class CAgent:
         self.crawlerManager.closeCache()
         
     def close(self):
-        self.closeCache()
-        
+        self.closeCache()     
         
 class CJrjHelper:
     
@@ -140,8 +139,19 @@ class CJrjHelper:
         r = requests.get(self.urlRoot + str(year) + '-' + str(month).zfill(2) + '-' + str(day).zfill(2)
                             + r'.js?_=' + randomSeq)
 #        print(randomSeq)
+#        print(r.content[15:-5])
+        strJson = ''
+        try:
+            strJson = json.loads(r.content[15:-5])
+        except:
+            import re
+            temp = r.content[15:-5]
+            str2 = temp.decode()
+            print(str2)
+            regex = re.compile(r'\\(?![/u"])')
+            fixed = regex.sub(r"\\\\", str2)
+            strJson = json.loads(fixed)
         
-        strJson = json.loads(r.content[15:-5])
         
         info = strJson['newsinfo']
         numNews = len(info)
@@ -155,5 +165,8 @@ class CJrjHelper:
             oUrlList.append(url,preInfo)
                     
         return oUrlList
+    
+    
+        
         
         

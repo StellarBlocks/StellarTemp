@@ -12,6 +12,7 @@ import multiprocessing as mp
 import argparse
 from StellarLog.StellarLog import CLog,CDirectoryConfig,datetime
 import yaml 
+import ReturnCode
 
 class CConfigByYaml:
     
@@ -321,7 +322,10 @@ class CKnowledgeClient:
         
     def recv(self):
         if(not self.conn.closed):
-            return self.conn.recv()
+            if(self.conn.poll()):
+                return self.conn.recv()
+            else:
+                return ReturnCode.ERR_NOTHING_TO_RECV
         else:
             self.modMsg('connection is closed')
             return False
