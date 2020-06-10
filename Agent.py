@@ -7,12 +7,17 @@ Created on Thu Mar  5 13:37:20 2020
 from CrawlerManager import CCrawlerManager, CUrlList
 from StorageManager import CStorage,CStorageMongoDB
 from KnowledgeManager import CKnowledgeClient
+from SignalHandle import fKeyboardInterruptRegistrar
 from StellarLog.StellarLog import CDirectoryConfig,CLog
 import signal
 from diskcache import Cache
 import json
 import yaml
 import time
+
+#FLAG
+WRITE_TO_STORAGE_FLAG = False
+
 
 class CConfigByYaml:
     
@@ -42,7 +47,7 @@ class CConfigByYaml:
 
 class CAgent:
     
-    def __init__(self,name, oDir:CDirectoryConfig, oConfigByYaml:CConfigByYaml):
+    def __init__(self,name, oDir:CDirectoryConfig, oConfigByYaml:CConfigByYaml,connectKnowlegeServer = False):
         self.name = name
         self.crawlerManager:CCrawlerManager = None
         self.storageManager:CStorage = None
@@ -53,6 +58,10 @@ class CAgent:
         self.dbWeb = ''
         self.cacheAgent = Cache(oDir['cacheAgentFolder'])
         self.cacheCrawler = Cache(oDir['cacheCrawlerFolder'])
+        self.flagConnectKnowlegeServer = connectKnowlegeServer
+        fKeyboardInterruptRegistrar(self._callbackKeyboardInterrupt)
+        self.flagUserClose = False
+#        fKeyboardInterruptRegistrar._register['test'] = self._callbackKeyboardInterrupt
         
         
     def _configStorage(self,mode = 'mongoDB'):
@@ -73,7 +82,13 @@ class CAgent:
         oSubConfig = self.oConf['KnowledgeManager']
         addressTuple = (oSubConfig['address'],oSubConfig['port'])
         key = oSubConfig['password']
+        key = bytes(key,'utf-8')
+        print(key)
         self.knowledgeManagerClient = CKnowledgeClient(addressTuple,key,self.oLog)
+        if self.flagConnectKnowlegeServer:
+            err = self.knowledgeManagerClient.connect()
+            if err == False:
+                raise ValueError("KnowledgeManager connection failed")
     
     def configAll(self):
         self._configCrawler()
@@ -89,6 +104,8 @@ class CAgent:
     def fetchResult(self,handler,subProcHandle,timeWaitStep = 1,maxWaitTimes=5): #total continuous waittime will be (timeWaitStep * maxWaitTimes)
         result = ''
         cnt = 0
+        global WRITE_TO_STORAGE_FLAG
+        WRITE_TO_STORAGE_FLAG = True
         while(True):
             _,result = self.cacheAgent.pull()
             if(result != None):
@@ -101,13 +118,16 @@ class CAgent:
                 cnt = 0 #clear counter
             elif(timeWaitStep * maxWaitTimes > 0):
                 if(cnt >= maxWaitTimes):# if continuous wait time equals to maxWaitTimes
+                    WRITE_TO_STORAGE_FLAG = False
                     return False
                 elif subProcHandle.poll() != None: #if the subprocess is finished
+                    WRITE_TO_STORAGE_FLAG = False
                     return subProcHandle.poll()
                 else:
                     time.sleep(timeWaitStep)
                     cnt+=1 #counter add one
             else:
+                WRITE_TO_STORAGE_FLAG = False
                 raise ValueError("timeWaitStep * maxWaitTimes should be bigger than 0")
     
     def clearCache(self):
@@ -118,9 +138,37 @@ class CAgent:
         self.cacheAgent.close()
         self.cacheCrawler.close()
         self.crawlerManager.closeCache()
+    
+    def _callbackKeyboardInterrupt(self,*args,**kwargs):
+        global WRITE_TO_STORAGE_FLAG
+        self.flagUserClose = True
+        if (WRITE_TO_STORAGE_FLAG is True):
+            numRemainedMsg = len(self.cacheAgent)
+            MSG = "Agent is fetching the result to the Storage," + \
+            " number of remained items: " + str(numRemainedMsg) + \
+            ", will close later."
+            return False,MSG
+        else:
+            return True,''
+        
+    def test(self):
+        #code for testing keyboard interruption handle
+        global WRITE_TO_STORAGE_FLAG
+        WRITE_TO_STORAGE_FLAG = True
+        for i in range(1000):
+            time.sleep(0.01)
+        WRITE_TO_STORAGE_FLAG = False
+        #
+        
+#        print('Press Ctrl+C')
+#        for x in range(1,100):
+#            time.sleep(0.2)
+#            print(x) 
         
     def close(self):
-        self.closeCache()     
+        self.knowledgeManagerClient.close()
+        self.closeCache()
+        
         
 class CJrjHelper:
     

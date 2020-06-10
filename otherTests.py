@@ -10,6 +10,7 @@ from StellarLog.StellarLog import CLog, CDirectoryConfig
 from MiddleWare import resultHandler, MINDate
 from datetime import datetime,timedelta
 from Agent import CJrjHelper,CAgent,CConfigByYaml
+import signal,time
 #oLog = CLog('./','testLog')
 #oLog.safeRecord('aaahhh')
 
@@ -27,24 +28,45 @@ oDir = CDirectoryConfig(dir_list,'./conf/filesDirectory.conf')
 oDir.checkFolders()
 
 oConf = CConfigByYaml('./conf/ConfigAttributes.yml')
-oAgent = CAgent('testjrj',oDir,oConf)
+oAgent = CAgent('testjrj',oDir,oConf,True)
+oAgent.configAll()
 
-dateToFetch =datetime(2016,1,1)
-today = datetime.now()
-while dateToFetch <= today :
+oAgent.knowledgeManagerClient.send('nextDate')
+key = oAgent.knowledgeManagerClient.recv(True)
+result = oAgent.cacheAgent.get(key)
+dateToFetch = None
+endDate = None
+if(type(result) == str):
+    dateToFetch = MINDate
+    endDate = datetime.now()
+else:
+    if type(result) == tuple:
+        dateToFetch = MINDate
+        endDate = result[0]
+    elif(isinstance(result,datetime)):
+        dateToFetch = result
+        endDate = datetime.now()
+print(dateToFetch,endDate)
+while dateToFetch <= endDate :
+    print(str(dateToFetch) + '; current time  '+str(datetime.now()))
     oJrjUrls = CJrjHelper()
     y = dateToFetch.year
     m = dateToFetch.month
     d = dateToFetch.day
+    print('start fetchUrls; current time  ' + str(datetime.now()))
     oUrlList = oJrjUrls.fetchUrlsForDate(y,m,d)
     #oUrlList = oUrlList[0:2]
     jobsList = [oUrlList]
-    oAgent.configAll()
+    print('start crawling; current time ' + str(datetime.now()))
     err= oAgent.startCrawling(jobsList)
+    print('start fetching; current time  ' + str(datetime.now()))
     oAgent.fetchResult(resultHandler,err,1,10)
     dateToFetch = dateToFetch + oDateDelta
+    if(oAgent.flagUserClose):
+        break
+    print('------------------------------------------------')
 oAgent.clearCache()
-oAgent.closeCache()
+oAgent.close()
 
 '''
 #to do:
@@ -75,21 +97,28 @@ make the program didn't exit until all fetched data is written in database
 #err= os.system(startCmd)
 #print(err)
 
-from multiprocessing.connection import Client
-
-address = ('localhost', 6085)
-conn = Client(address, authkey=b'secret password')
-print('connected')
-for idx in range(3):
-    conn.send(str(idx))
-conn.send('close')
-#for idx in range(3,10**4):
+#from multiprocessing.connection import Client
+#
+#address = ('localhost', 6085)
+#conn = Client(address, authkey=b'secret password')
+#print('connected')
+#for idx in range(3):
 #    conn.send(str(idx))
-    
+#conn.send('close')
+#
+#msg = conn.recv()
+#print(msg)
+#
+## can also send arbitrary objects:
+## conn.send(['a', 2.5, None, int, sum])
+#conn.close()
 
-msg = conn.recv()
-print(msg)
-
-# can also send arbitrary objects:
-# conn.send(['a', 2.5, None, int, sum])
-conn.close()
+#from KnowledgeManager import CKnowledgeClient
+#address = ('localhost', 6085)
+#oClient = CKnowledgeClient(address)
+#oClient.connect()
+#oClient.send('hi')
+#msg = oClient.recv()
+#print(msg)
+#err = oClient.close()
+#print(err)

@@ -13,6 +13,27 @@ import argparse
 from StellarLog.StellarLog import CLog,CDirectoryConfig,datetime
 import yaml 
 import ReturnCode
+import diskcache
+from MiddleWare import calNextStartDate
+import time
+
+class CCommandDict:
+    
+    def __init__(self):
+        self.command = dict()
+
+    def __call__(self,key,func):
+        if(callable(func)):
+            self.command[key] = func
+        else:
+            raise ValueError("input should be a function")
+            
+    def __getitem__(self,key):
+        return self.command[key]
+    
+oCommandDict = CCommandDict()
+oCommandDict('nextDate',calNextStartDate)
+
 
 class CConfigByYaml:
     
@@ -112,12 +133,14 @@ def onCallRecvDaemon(oServer:CServer,oInstrCache:mp.Queue,oRecvCache:mp.Queue,oL
                 otherEndCloseFlag = True #!!!important
                 recvMsg = ''
             else:
-                print(recvMsg)
+                print('onCallRecv_recv_msg: ',recvMsg)
                 if(oLog != None):
                     oLog.safeRecordTime('onCallRecv_recv_msg: '+recvMsg)
                 err = oRecvCache.put(recvMsg)
 #                print(err)
                 otherEndCloseFlag = False
+                if(recvMsg == 'quitBusyMode'):
+                    return err
         
         if(oServer.poll(0) == False or otherEndCloseFlag):
             try:
@@ -130,10 +153,10 @@ def onCallRecvDaemon(oServer:CServer,oInstrCache:mp.Queue,oRecvCache:mp.Queue,oL
                     if(oLog != None):
                         oLog.safeRecordTime('onCallRecv_recv_inst: ' + instr)
                     oInstrCache.put('onCallRecv_Close')
-                    print('return')
                     return
                 else:
                     pass
+        time.sleep(1)
         
     return 0
 
@@ -148,6 +171,9 @@ def onCallSendDaemon(oServer:CServer,oInstrCache:mp.Queue,oSendCache:mp.Queue,oL
             sendMsg = ''
         else:
             oServer.send(sendMsg)
+            print('onCallSend_send_msg: ', sendMsg)
+            if(oLog != None):
+                oLog.safeRecordTime('onCallSend_send_msg: '+sendMsg)
         
         
         if(oSendCache.empty() == True):
@@ -164,6 +190,7 @@ def onCallSendDaemon(oServer:CServer,oInstrCache:mp.Queue,oSendCache:mp.Queue,oL
                     return
                 else:
                     pass
+        time.sleep(1)
         
     return 0
 
@@ -171,7 +198,7 @@ class CKnowledge:
     
     def __init__(self,name, dbPath:str,logFlag = False):
         self.name = name + '_knowledge'
-        self._storageManager:CStorage = CStorageMongoDB(name,dbPath)
+        self._oStorageManager:CStorage = CStorageMongoDB(name,dbPath)
         oConfig = CConfigByYaml('./conf/ConfigAttributes.yml')['KnowledgeManager']
         self.address = (oConfig['address'], oConfig['port'])
         self.oCrsProcManager = CCrsProcManager()
@@ -184,14 +211,24 @@ class CKnowledge:
         self.prcSend = None
         self.logFlag = logFlag
         self.oLog = None
+        global oCommandDict
+        self.oCommandDict = oCommandDict
+        oDir = self.configDir()
+        self.oAgentCache = diskcache.Cache(oDir['cacheAgentFolder'])
         print(self.logFlag)
-      
+        
+    def configDir(self):
+        dir_list = ['cacheAgentFolder']
+        oDir = CDirectoryConfig(dir_list,'./conf/filesDirectory.conf')
+        oDir.checkFolders()
+        return oDir
+        
     def configLogger(self):
         dir_list = ['Log']
         oDir = CDirectoryConfig(dir_list,'./conf/filesDirectory.conf')
         oDir.checkFolders()
         self.oLog = self.oCrsProcManager.oLog(oDir['Log'],'CKnowledge'+str(datetime.datetime.now().date()))
-            
+    
     def startServer(self):
         self.oCrsProcManager.start()
         if(self.logFlag == True):
@@ -206,9 +243,32 @@ class CKnowledge:
         
         self.prcSend = mp.Process(target = onCallSendDaemon,
                                   args=[self.oServer, self.oInstrSendCache,self.oSendCache,self.oLog])
+        while (True):
+            recvMsg = self.oServer.recv()
+            if(recvMsg == 'busyMode'):
+                err = self.busyMode()
+                if(err == 0):
+                    break
+            elif(recvMsg == 'close'):
+                break
+            elif(recvMsg in self.oCommandDict.command.keys()):
+                    print('start handling service request: ' + recvMsg)
+                    self.handleRegisteredService(recvMsg)
+                    print('finish handling service request: ' + recvMsg)
+            else:
+                print('recv msg: ',recvMsg)
+            
+        self.handleCloseMsg()
+        return 0
+        
+    def busyMode(self):
+        print('enter busy mode')
+        if self.logFlag: 
+            self.oLog.safeRecordTime('enter busy mode')
+            
         self.prcRecv.start()
         self.prcSend.start()
-        lastMsg = list()
+        
         while True:
             recvMsg = ''
             try:
@@ -216,55 +276,102 @@ class CKnowledge:
             except:
                 recvMsg = ''
             else:
+#                print(self.oCommandDict.command.keys())
                 if(recvMsg == 'close'):
-                    self.oSendCache.put('All is closed')
-                    self.oInstrRecvCache.put('close')
-                    self.oInstrSendCache.put('close')
-                    err1 = self.prcSend.join()
-                    print('prcSend',err1)
+                    self.closeBusyMode()
+                    return 0
+                elif(recvMsg in self.oCommandDict.command.keys()):
+                    print('start handling service request: ' + recvMsg)
+                    self.handleRegisteredService_busyMode(recvMsg)
+                    print('finish handling service request: ' + recvMsg)
+                elif(recvMsg == 'quitBusyMode'):
+                    self.closeBusyMode()
+                    return 1
                     
-                    while (True): #self.oRecvCache.empty() is not reliable, because it can be empty before new item comes
-                        try: 
-                            recvMsg = self.oRecvCache.get(timeout = 3)
-                            lastMsg.append(recvMsg)
-                        except:
-                            break
-                        
-                    err2 = self.prcRecv.join() #it seems that if join() wait for too long, it will block forever; Maybe because the deadlock between existed recv process and the queue cache the recv process keeps
-                    print('prcRecv',err2)
-                    try:
-                        self.prcRecv.close()
-                    except:
-                        self.prcRecv.terminate()
-                    try:
-                        self.prcSend.close()
-                    except:
-                        self.prcSend.terminate()
-                    
-                    if self.logFlag: 
-                        self.oLog.safeRecord('last Msg: ',False)
-                        for msg in lastMsg:
-                            self.oLog.safeRecord(msg, False)
-                        self.oLog.safeRecord('')
-                    
-                    ans = self.oInstrRecvCache.get()
-                    print(ans)
-                    if self.logFlag: 
-                        self.oLog.safeRecordTime(ans)
-                        
-                    ans = self.oInstrSendCache.get()
-                    print(ans)
-                    if self.logFlag: 
-                        self.oLog.safeRecordTime(ans)
-                        
-                    self.oServer.close()
-                    if self.logFlag: 
-                        self.oLog.safeRecordTime('server_close')
-                        self.oLog.safeRecord('----------------------------------------')
-                    self.oCrsProcManager.shutdown()
-#                    print("CKnowledgeServer_close")
-                    return "CKnowledgeServer_close"
         return 0
+    
+    def handleRegisteredService(self,key):
+        result= ''
+        if(self._oStorageManager.checkExist()):
+            result = self.oCommandDict[key](self._oStorageManager.db)
+        else:
+            result = 'database: ' + self._oStorageManager.dbName + ' is not existed'
+        self.oAgentCache[key] = result
+        self.oServer.send(key)
+        print('send_msg: ',key)
+        if self.logFlag: 
+            self.oLog.safeRecordTime('send_msg: ' + key)
+    
+    def handleRegisteredService_busyMode(self,key):
+        result= ''
+        if(self._oStorageManager.checkExist()):
+            result = self.oCommandDict[key](self._oStorageManager.db)
+        else:
+            result = 'database: ' + self._oStorageManager.dbName + ' is not existed'
+        self.oAgentCache[key] = result
+        self.oSendCache.put(key)
+    
+    def closeBusyMode(self):
+        lastMsg = list()
+#        self.oSendCache.put('All is closed')
+        self.oInstrRecvCache.put('close')
+        self.oInstrSendCache.put('close')
+        err1 = self.prcSend.join()
+        print('prcSend join return',err1)
+        
+        #now there is no need to handle msg after 'close'
+#        while (True): 
+#        #self.oRecvCache.empty() is not reliable, because it can be empty before new item comes, instead, we need to use timeout
+#            try: 
+#                recvMsg = self.oRecvCache.get(timeout = 3)
+#                lastMsg.append(recvMsg)
+#            except:
+#                break
+            
+        err2 = self.prcRecv.join() #it seems that if join() wait for too long, it will block forever; Maybe because the deadlock between existed recv process and the queue cache the recv process keeps
+        print('prcRecv join return',err2)
+        try:
+            self.prcRecv.close()
+        except:
+            self.prcRecv.terminate()
+        try:
+            self.prcSend.close()
+        except:
+            self.prcSend.terminate()
+        
+        if self.logFlag: 
+            self.oLog.safeRecord('last Msg: ',False)
+            for msg in lastMsg:
+                self.oLog.safeRecord(msg, False)
+            self.oLog.safeRecord('')
+        
+        ans = self.oInstrRecvCache.get()
+        print(ans)
+        if self.logFlag: 
+            self.oLog.safeRecordTime(ans)
+            
+        ans = self.oInstrSendCache.get()
+        print(ans)
+        if self.logFlag: 
+            self.oLog.safeRecordTime(ans)
+        
+        print('quit busy mode')
+        if self.logFlag: 
+            self.oLog.safeRecordTime('quit busy mode')
+            
+        return "CKnowledgeServer_busyMode_close"
+    
+    def handleCloseMsg(self):
+        self.oServer.send('All is closed')
+        print('send_msg: All is closed')
+        self.oServer.close()
+        if self.logFlag: 
+            self.oLog.safeRecordTime('send_msg: All is closed')
+            self.oLog.safeRecordTime('server_close')
+            self.oLog.safeRecord('----------------------------------------')
+        self.oCrsProcManager.shutdown()
+#                    print("CKnowledgeServer_close")
+        return "CKnowledgeServer_close"
     
     def _close(self):
         try:
@@ -311,21 +418,29 @@ class CKnowledgeClient:
         self.oLog = oLog
         
     def connect(self):
-        self.conn = Client(self.addressTuple, authkey=self.authkey)
+        try:
+            self.conn = Client(self.addressTuple, authkey=self.authkey)
+        except:
+            self.modMsg('connection is refused')
+            return False
+        else:
+            return True
     
     def send(self,msg):
-        if(not self.conn.closed):
-            return self.conn.send('msg')
+        if(not self.closedFlag):
+            return self.conn.send(msg)
         else:
             self.modMsg('connection is closed')
             return False
         
-    def recv(self):
-        if(not self.conn.closed):
+    def recv(self,block = False):
+        if(not self.closedFlag):
+            if block:
+                return self.conn.recv()
             if(self.conn.poll()):
                 return self.conn.recv()
             else:
-                return ReturnCode.ERR_NOTHING_TO_RECV
+                return ReturnCode.WARNING_NOTHING_TO_RECV
         else:
             self.modMsg('connection is closed')
             return False
@@ -333,12 +448,20 @@ class CKnowledgeClient:
     def close(self):
         if(not self.closedFlag):
             self.conn.send('close')
-            msg = self.conn.recv()
-            if(msg == 'All is closed'):
-                self.conn.close()
-                return True
-            else:
+            try:
+                msg = self.conn.recv()
+                print(msg)
+                if(msg == 'All is closed'):
+                    self.conn.close()
+                    return True
+                else:
+                    return False
+            except:
+                self.modMsg('nothing to recv')
                 return False
+        else:
+            self.modMsg('connection is closed')
+            return False
             
     def modMsg(self,string:str):
         string = self.__class__.__name__ + ' warning: ' + string

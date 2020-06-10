@@ -82,10 +82,10 @@ class CCrawlerManager:
                                     'cacheAgentPath=' + self._cachePathAgent],
                                    shell=True, 
                                    cwd=self.workDirectory)
-        print('scrapy','crawl',crawlerName,'-a',
-                                    'cacheCrawlerPath='+ self._cachePathCrawler,'-a',
-                                    'cacheKey='+oUrlCacheKey,'-a',
-                                    'cacheAgentPath=' + self._cachePathAgent)
+#        print('scrapy','crawl',crawlerName,'-a',
+#                                    'cacheCrawlerPath='+ self._cachePathCrawler,'-a',
+#                                    'cacheKey='+oUrlCacheKey,'-a',
+#                                    'cacheAgentPath=' + self._cachePathAgent)
         
         return process
     

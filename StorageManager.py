@@ -52,6 +52,7 @@ class CStorageMongoDB(CStorage):
         super().__init__(name,path)
         print(path)
         self.client = pymongo.MongoClient(self.path)
+        self.dbName = self.name + '_db'
         self.db = self.client[self.name + '_db']
         
     def storeData(self,collectionName,wrapper:CDataWrapper,*args,**kwargs):
@@ -59,7 +60,15 @@ class CStorageMongoDB(CStorage):
         document = wrapper(*args,**kwargs)
         return collection.insert_one(document)
         
-
+    def checkExist(self,collectionName=None):
+        if self.dbName not in self.client.database_names():
+            return False
+        
+        if collectionName is not None:
+            if collectionName not in self.db.collection_names():
+                return False
+        
+        return True
         
 
         

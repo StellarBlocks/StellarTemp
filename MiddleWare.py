@@ -13,6 +13,9 @@ oLogWrapper = CDataWrapper(attrSet={'data'})
 oResultWrapper = CDataWrapper(currentEmpty=['postInfo'])
 
 def resultHandler(Type,data):
+    dataAttr = data['data']
+    dataAttr['timestamp'] = datetime.now()
+        
     if(Type == 'logInfo'):
         temp = data['data']
 #        print(temp)
@@ -36,29 +39,23 @@ def dateStrToObject(string):
     return datetime(*temp)
 
 
-class CCommandDict:
     
-    def __init__(self):
-        self.command = dict()
-        self.command['nextDate'] = self.calNextStartDate
-
-    def calNextStartDate(self,DBHandle):
-        coll = DBHandle['LogInfo']
-        numDates = len(coll.distinct("data.Date"))
-        maxDate = coll.aggregate([{"$group":{"_id":None,"max":{"$max":"$data.Date"}}}]).next()['max']
-        minDate = coll.aggregate([{"$group":{"_id":None,"min":{"$min":"$data.Date"}}}]).next()['min']
-        numCalDays = maxDate - minDate 
-        numCalDays = numCalDays.days + 1
-        step = timedelta(1)
-        if(numDates != numCalDays):
-            #errorHandle
-            print('aaa',numDates,numCalDays)
-            pass
+def calNextStartDate(DBHandle):
+    if('LogInfo' not in DBHandle.collection_names()):
+        return "No This Collection: " + str('LogInfo')
+    coll = DBHandle['LogInfo']
+    numDates = len(coll.distinct("data.Date"))
+    maxDate = coll.aggregate([{"$group":{"_id":None,"max":{"$max":"$data.Date"}}}]).next()['max']
+    minDate = coll.aggregate([{"$group":{"_id":None,"min":{"$min":"$data.Date"}}}]).next()['min']
+    numCalDays = maxDate - minDate 
+    numCalDays = numCalDays.days + 1
+    step = timedelta(1)
+    if(numDates != numCalDays):
+        #errorHandle
+        print('aaa',numDates,numCalDays)
+        pass
+    else:
+        if(minDate > MINDate):
+            return (minDate-step,maxDate+step)
         else:
-            if(minDate > MINDate):
-                return (minDate-step,maxDate+step)
-            else:
-                return maxDate+step
-        
-    def __getitem__(self,key):
-        return self.command[key]
+            return maxDate+step
