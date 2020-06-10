@@ -4,7 +4,7 @@ Created on Thu Mar  5 13:27:23 2020
 
 @author: jido
 """
-
+import socket,select
 from StorageManager import CStorage,CStorageMongoDB
 from multiprocessing.connection import Listener
 from multiprocessing.managers import BaseManager  
@@ -101,10 +101,15 @@ class CServer:
     def poll(self,timeout=1):
         return self.conn.poll(timeout=timeout)
     
+    def getConnection(self):
+        return self.conn
+    
 class CCrsProcManager(BaseManager):
     pass
 
-CCrsProcManager.register('server', CServer)
+CCrsProcManager.register('server', CServer)#regested class in Manager can only use the class's method but not attribute
+#https://docs.python.org/3.6/library/multiprocessing.html#multiprocessing.managers.BaseManager.register
+
 CCrsProcManager.register('oLog', CLog)
 
 
@@ -119,80 +124,78 @@ def sendRes(oServer:CServer,msg): # old version
     oServer.send(msg+'multiprocess')
     return 0
 
-def onCallRecvDaemon(oServer:CServer,oInstrCache:mp.Queue,oRecvCache:mp.Queue,oLog:CLog=None):
+def onCallRecvDaemon(address,oServer:CServer,oRecvCache:mp.Queue):
+    oSocket = socket.socket(socket.AF_INET,socket.SOCK_STREAM)
+    oSocket.bind(address)
+    oSocket.listen()
+    oInnerConn,addr = oSocket.accept()
+    print('onCallRecv: connected')
+    oOuterConn = oServer.getConnection()
+    readList = [oSocket,oOuterConn,oInnerConn]
     while True:
-        instr = ''
-        recvMsg = ''
-        otherEndCloseFlag = True
-        
-        if(oServer.poll(3) != False):# poll will return true when the other end of the pipe is closed
-#            print("onCallRecv: Waiting for msg",oServer.poll())
-            try:
-                recvMsg = oServer.recv()
-            except:
-                otherEndCloseFlag = True #!!!important
-                recvMsg = ''
-            else:
-                print('onCallRecv_recv_msg: ',recvMsg)
-                if(oLog != None):
-                    oLog.safeRecordTime('onCallRecv_recv_msg: '+recvMsg)
-                err = oRecvCache.put(recvMsg)
-#                print(err)
-                otherEndCloseFlag = False
-                if(recvMsg == 'quitBusyMode'):
-                    return err
-        
-        if(oServer.poll(0) == False or otherEndCloseFlag):
-            try:
-                instr = oInstrCache.get(block = False)
-            except:
-                instr = ''
-            else:
-                if (instr == 'close'):
-                    print('onCallRecv: recv inst: ' + instr)
-                    if(oLog != None):
-                        oLog.safeRecordTime('onCallRecv_recv_inst: ' + instr)
-                    oInstrCache.put('onCallRecv_Close')
+        rd,wt,ex = select.select(readList,[],[])
+        for r in rd:
+            if r is oSocket:
+                c,addr = r.accept()
+                oInnerConn = c
+                readList.append(c)
+                print('onCallRecv: connected')
+            elif r is oOuterConn:
+                if r.poll(3):
+                    try:
+                        recvMsg = oOuterConn.recv()
+                    except:
+                        recvMsg = ''
+                        print('onCallRecv: the other side is closed')
+                        readList.remove(oOuterConn)
+                    else:
+                        print('onCallRecv_recv_msg: ',recvMsg)
+                        oRecvCache.put(recvMsg)
+                        oInnerConn.send(b'newMsg')
+                        if(recvMsg == 'quitBusyMode'):
+                            return
+            elif r is oInnerConn:
+                data = r.recv(512)
+                msg = data.decode()
+                print('onCallRecv_recv_instr:',msg)
+                if(msg == 'close'):
+                    oSocket.close()
                     return
-                else:
-                    pass
-        time.sleep(1)
-        
-    return 0
+    return
+    
 
-def onCallSendDaemon(oServer:CServer,oInstrCache:mp.Queue,oSendCache:mp.Queue,oLog:CLog=None):
+def onCallSendDaemon(address,oServer:CServer,oSendCache:mp.Queue):
+    oSocket = socket.socket(socket.AF_INET,socket.SOCK_STREAM)
+    oSocket.bind(address)
+    oSocket.listen()
+    oInnerConn,addr = oSocket.accept()
+    print('onCallSend_connected')
+    oOuterConn = oServer.getConnection()
+    readList = [oSocket,oInnerConn]
     while True:
-        instr = ''
-        sendMsg = ''
-        
-        try:
-            sendMsg = oSendCache.get(block = False)
-        except:
-            sendMsg = ''
-        else:
-            oServer.send(sendMsg)
-            print('onCallSend_send_msg: ', sendMsg)
-            if(oLog != None):
-                oLog.safeRecordTime('onCallSend_send_msg: '+sendMsg)
-        
-        
-        if(oSendCache.empty() == True):
-            try:
-                instr = oInstrCache.get(block = False)
-            except:
-                instr = ''
-            else:
-                if (instr == 'close'):
-                    print('onCallSend: recv inst: ' + instr)
-                    if(oLog != None):
-                        oLog.safeRecordTime('onCallSend_recv_inst: ' + instr)
-                    oInstrCache.put('onCallSend_Close')
+        rd,wt,ex = select.select(readList,[],[])
+        for r in rd:
+            if r is oSocket:
+                c,addr = r.accept()
+                oInnerConn = c
+                readList.append(c)
+                print('onCallSend_connected')
+            elif r is oInnerConn:
+                data = r.recv(512)
+                msg = data.decode()
+                print('onCallSend_recv_instr:',msg)
+                if('send' in msg): #close and send can be concatenated together
+                    while (not oSendCache.empty()):
+                        try:
+                            sendMsg = oSendCache.get(timeout = 3)
+                        except:
+                            sendMsg = ''
+                        else:
+                            oOuterConn.send(sendMsg)
+                            print('onCallSend_send_msg: ', sendMsg)
+                if('close' in msg):
+                    oSocket.close()
                     return
-                else:
-                    pass
-        time.sleep(1)
-        
-    return 0
 
 class CKnowledge:
     
@@ -201,12 +204,12 @@ class CKnowledge:
         self._oStorageManager:CStorage = CStorageMongoDB(name,dbPath)
         oConfig = CConfigByYaml('./conf/ConfigAttributes.yml')['KnowledgeManager']
         self.address = (oConfig['address'], oConfig['port'])
+        self.addressSendDaemon = ('localhost',8300)
+        self.addressRecvDaemon = ('localhost',8301)
         self.oCrsProcManager = CCrsProcManager()
         self.oServer = None
         self.oRecvCache = mp.Queue()
         self.oSendCache = mp.Queue()
-        self.oInstrRecvCache = mp.Queue()
-        self.oInstrSendCache = mp.Queue()
         self.prcRecv = None
         self.prcSend = None
         self.logFlag = logFlag
@@ -235,14 +238,16 @@ class CKnowledge:
             self.configLogger()
         self.oServer = self.oCrsProcManager.server(self.address)
         self.oServer.start()
+#        oConn = self.oServer.getConnection()
+#        print(oConn.fileno())
         print('server start')
         if self.logFlag: 
             self.oLog.safeRecordTime('server_start')
         self.prcRecv = mp.Process(target = onCallRecvDaemon, 
-                                  args=[self.oServer, self.oInstrRecvCache,self.oRecvCache,self.oLog])
+                                  args=[self.addressRecvDaemon,self.oServer, self.oRecvCache])
         
         self.prcSend = mp.Process(target = onCallSendDaemon,
-                                  args=[self.oServer, self.oInstrSendCache,self.oSendCache,self.oLog])
+                                  args=[self.addressSendDaemon,self.oServer, self.oSendCache])
         while (True):
             recvMsg = self.oServer.recv()
             if(recvMsg == 'busyMode'):
@@ -269,24 +274,38 @@ class CKnowledge:
         self.prcRecv.start()
         self.prcSend.start()
         
+        self.oSockSendDaemon = socket.socket(socket.AF_INET,socket.SOCK_STREAM)
+        self.oSockRecvDaemon = socket.socket(socket.AF_INET,socket.SOCK_STREAM)
+        
+        self.oSockSendDaemon.connect(self.addressSendDaemon)
+        self.oSockRecvDaemon.connect(self.addressRecvDaemon)
+        readList = [self.oSockRecvDaemon]
+        timeout = 5
+        print('main server select timeout:',timeout)
         while True:
-            recvMsg = ''
-            try:
-                recvMsg = self.oRecvCache.get(block=False)
-            except:
-                recvMsg = ''
-            else:
-#                print(self.oCommandDict.command.keys())
-                if(recvMsg == 'close'):
-                    self.closeBusyMode()
-                    return 0
-                elif(recvMsg in self.oCommandDict.command.keys()):
-                    print('start handling service request: ' + recvMsg)
-                    self.handleRegisteredService_busyMode(recvMsg)
-                    print('finish handling service request: ' + recvMsg)
-                elif(recvMsg == 'quitBusyMode'):
-                    self.closeBusyMode()
-                    return 1
+            rd,wt,ex = select.select(readList,[],[],timeout)
+            for r in rd:
+                if r is self.oSockRecvDaemon:
+                    data = r.recv(512)
+                    msg = data.decode()
+                    print('main server recv inner msg:', msg)
+                    if(msg == 'newMsg'):
+                        recvMsg = ''
+                        try:
+                            recvMsg = self.oRecvCache.get(timeout=1)
+                        except:
+                            recvMsg = ''
+                        print('main server recv msg:', recvMsg)
+                        if(recvMsg == 'close'):
+                            self.closeBusyMode()
+                            return 0
+                        elif(recvMsg in self.oCommandDict.command.keys()):
+                            print('start handling service request: ' + recvMsg)
+                            self.handleRegisteredService_busyMode(recvMsg)
+                            print('finish handling service request: ' + recvMsg)
+                        elif(recvMsg == 'quitBusyMode'):
+                            self.closeBusyMode()
+                            return 1
                     
         return 0
     
@@ -310,51 +329,19 @@ class CKnowledge:
             result = 'database: ' + self._oStorageManager.dbName + ' is not existed'
         self.oAgentCache[key] = result
         self.oSendCache.put(key)
+        self.oSockSendDaemon.send(b'send')
     
     def closeBusyMode(self):
-        lastMsg = list()
-#        self.oSendCache.put('All is closed')
-        self.oInstrRecvCache.put('close')
-        self.oInstrSendCache.put('close')
+        self.oSockSendDaemon.send(b'send')
+        err1 = self.oSockSendDaemon.send(b'close')
+        err2 = self.oSockRecvDaemon.send(b'close')
+        #        self.oSendCache.put('All is closed')
         err1 = self.prcSend.join()
         print('prcSend join return',err1)
-        
-        #now there is no need to handle msg after 'close'
-#        while (True): 
-#        #self.oRecvCache.empty() is not reliable, because it can be empty before new item comes, instead, we need to use timeout
-#            try: 
-#                recvMsg = self.oRecvCache.get(timeout = 3)
-#                lastMsg.append(recvMsg)
-#            except:
-#                break
             
         err2 = self.prcRecv.join() #it seems that if join() wait for too long, it will block forever; Maybe because the deadlock between existed recv process and the queue cache the recv process keeps
         print('prcRecv join return',err2)
-        try:
-            self.prcRecv.close()
-        except:
-            self.prcRecv.terminate()
-        try:
-            self.prcSend.close()
-        except:
-            self.prcSend.terminate()
-        
-        if self.logFlag: 
-            self.oLog.safeRecord('last Msg: ',False)
-            for msg in lastMsg:
-                self.oLog.safeRecord(msg, False)
-            self.oLog.safeRecord('')
-        
-        ans = self.oInstrRecvCache.get()
-        print(ans)
-        if self.logFlag: 
-            self.oLog.safeRecordTime(ans)
-            
-        ans = self.oInstrSendCache.get()
-        print(ans)
-        if self.logFlag: 
-            self.oLog.safeRecordTime(ans)
-        
+
         print('quit busy mode')
         if self.logFlag: 
             self.oLog.safeRecordTime('quit busy mode')

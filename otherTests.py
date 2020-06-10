@@ -28,10 +28,11 @@ oDir = CDirectoryConfig(dir_list,'./conf/filesDirectory.conf')
 oDir.checkFolders()
 
 oConf = CConfigByYaml('./conf/ConfigAttributes.yml')
-oAgent = CAgent('testjrj',oDir,oConf,True)
+oAgent = CAgent('testjrjNew',oDir,oConf,True)
 oAgent.configAll()
-
+oAgent.knowledgeManagerClient.send('busyMode')
 oAgent.knowledgeManagerClient.send('nextDate')
+oAgent.knowledgeManagerClient.send('quitBusyMode')
 key = oAgent.knowledgeManagerClient.recv(True)
 result = oAgent.cacheAgent.get(key)
 dateToFetch = None
@@ -113,12 +114,13 @@ make the program didn't exit until all fetched data is written in database
 ## conn.send(['a', 2.5, None, int, sum])
 #conn.close()
 
-#from KnowledgeManager import CKnowledgeClient
-#address = ('localhost', 6085)
-#oClient = CKnowledgeClient(address)
-#oClient.connect()
-#oClient.send('hi')
-#msg = oClient.recv()
-#print(msg)
-#err = oClient.close()
-#print(err)
+from KnowledgeManager import CKnowledgeClient
+address = ('localhost', 6085)
+oClient = CKnowledgeClient(address)
+oClient.connect()
+oClient.send('hi')
+oClient.send('close')
+msg = oClient.recv()
+print(msg)
+err = oClient.close()
+print(err)

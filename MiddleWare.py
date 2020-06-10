@@ -41,6 +41,8 @@ def dateStrToObject(string):
 
     
 def calNextStartDate(DBHandle):
+    #to do:
+    # doesn't handle the problem when numDates != numCalDays
     if('LogInfo' not in DBHandle.collection_names()):
         return "No This Collection: " + str('LogInfo')
     coll = DBHandle['LogInfo']
