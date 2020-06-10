@@ -114,13 +114,13 @@ make the program didn't exit until all fetched data is written in database
 ## conn.send(['a', 2.5, None, int, sum])
 #conn.close()
 
-from KnowledgeManager import CKnowledgeClient
-address = ('localhost', 6085)
-oClient = CKnowledgeClient(address)
-oClient.connect()
-oClient.send('hi')
-oClient.send('close')
-msg = oClient.recv()
-print(msg)
-err = oClient.close()
-print(err)
+#from KnowledgeManager import CKnowledgeClient
+#address = ('localhost', 6085)
+#oClient = CKnowledgeClient(address)
+#oClient.connect()
+#oClient.send('hi')
+#oClient.send('close')
+#msg = oClient.recv()
+#print(msg)
+#err = oClient.close()
+#print(err)
