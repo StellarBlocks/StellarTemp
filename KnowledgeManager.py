@@ -290,22 +290,23 @@ class CKnowledge:
                     msg = data.decode()
                     print('main server recv inner msg:', msg)
                     if(msg == 'newMsg'):
-                        recvMsg = ''
-                        try:
-                            recvMsg = self.oRecvCache.get(timeout=1)
-                        except:
+                        while not self.oRecvCache.empty():
                             recvMsg = ''
-                        print('main server recv msg:', recvMsg)
-                        if(recvMsg == 'close'):
-                            self.closeBusyMode()
-                            return 0
-                        elif(recvMsg in self.oCommandDict.command.keys()):
-                            print('start handling service request: ' + recvMsg)
-                            self.handleRegisteredService_busyMode(recvMsg)
-                            print('finish handling service request: ' + recvMsg)
-                        elif(recvMsg == 'quitBusyMode'):
-                            self.closeBusyMode()
-                            return 1
+                            try:
+                                recvMsg = self.oRecvCache.get(timeout=1)
+                            except:
+                                recvMsg = ''
+                            print('main server recv msg:', recvMsg)
+                            if(recvMsg == 'close'):
+                                self.closeBusyMode()
+                                return 0
+                            elif(recvMsg in self.oCommandDict.command.keys()):
+                                print('start handling service request: ' + recvMsg)
+                                self.handleRegisteredService_busyMode(recvMsg)
+                                print('finish handling service request: ' + recvMsg)
+                            elif(recvMsg == 'quitBusyMode'):
+                                self.closeBusyMode()
+                                return 1
                     
         return 0
     
